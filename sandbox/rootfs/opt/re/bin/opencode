@@ -1,0 +1,10 @@
+#!/bin/bash
+# opencode via the credential gateway (all providers configured in /etc/opencode/opencode.json).
+# -m on the host (RE_MODEL, "provider/model") becomes the default model through an extra config layer.
+set -euo pipefail
+if [ -n "${RE_MODEL:-}" ]; then
+  cfg=$(mktemp /tmp/re-opencode-model.XXXXXX.json)
+  jq -n --arg m "$RE_MODEL" '{model: $m}' > "$cfg"
+  export OPENCODE_CONFIG=$cfg
+fi
+exec /usr/local/bin/opencode "$@"

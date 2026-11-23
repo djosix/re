@@ -1,0 +1,9 @@
+# Added by ./re when --allow is used: gives the sandbox's network namespace a
+# route out. netns/firewall.sh still rejects everything except RE_ALLOW_CIDRS,
+# and always rejects the host, link-local/metadata and RE_DENY_CIDRS.
+services:
+  netns:
+    networks: [sandbox, egress]
+
+networks:
+  egress: {}

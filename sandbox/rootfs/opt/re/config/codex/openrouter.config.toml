@@ -1,0 +1,4 @@
+# managed-by-re
+# Profile file (codex --profile openrouter); merged over config.toml.
+# OpenRouter needs a namespaced model id: codex -m openai/<model>
+model_provider = "re-openrouter"

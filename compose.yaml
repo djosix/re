@@ -1,0 +1,122 @@
+# Use through ./re (it sets RE_* variables per workspace). Topology:
+#
+#   sandbox ──(netns: shared network namespace + firewall, no NET_ADMIN for sandbox)
+#      │  network "sandbox" (internal: no route out, no DNS forwarding)
+#      ├── gateway:8080  holds API keys (./secrets), injects them, fixed upstreams only
+#      └── relay:*       no secrets; fixed TCP forwards + allow-listed HTTP egress proxy
+#   gateway/relay also sit on "outside" for real egress. With --allow, netns joins "egress".
+
+name: ${RE_PROJECT:-re}
+
+x-hardened: &hardened
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  gateway:
+    <<: *hardened
+    image: re-gateway:latest
+    build: ./gateway
+    command: ["-mode", "llm"]
+    volumes:
+      - ./secrets:/run/secrets:ro
+    networks: [sandbox, outside]
+    mem_limit: 256m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "/re-gateway", "-healthcheck", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 3s
+
+  relay:
+    <<: *hardened
+    image: re-gateway:latest
+    command: ["-mode", "relay"]
+    environment:
+      RE_FORWARDS: ${RE_FORWARDS:-}
+      RE_EGRESS_DOMAINS: ${RE_EGRESS_DOMAINS:-}
+      RE_EGRESS_PORTS: ${RE_EGRESS_PORTS:-443,80}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [sandbox, outside]
+    mem_limit: 256m
+    pids_limit: 512
+    depends_on:
+      gateway: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "/re-gateway", "-healthcheck", "http://127.0.0.1:3128/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 3s
+
+  netns:
+    image: re-netns:latest
+    build: ./netns
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/run, /tmp]
+    restart: unless-stopped
+    environment:
+      RE_ALLOW_CIDRS: ${RE_ALLOW_CIDRS:-}
+      RE_DENY_CIDRS: ${RE_DENY_CIDRS:-}
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: 1
+      net.ipv6.conf.default.disable_ipv6: 1
+    networks: [sandbox]
+    mem_limit: 64m
+    pids_limit: 64
+    depends_on:
+      gateway: { condition: service_started }
+      relay: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "test", "-f", "/run/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  sandbox:
+    image: re-sandbox:latest
+    build: ./sandbox
+    network_mode: "service:netns"
+    depends_on:
+      netns: { condition: service_healthy }
+      gateway: { condition: service_healthy }
+      relay: { condition: service_healthy }
+    cap_drop: [ALL]
+    security_opt:
+      - "no-new-privileges:true"
+      - "seccomp=${RE_SECCOMP:-./sandbox/seccomp.json}"
+    init: true
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    environment:
+      RE_EXPECT_EGRESS: ${RE_EXPECT_EGRESS:-0}
+      TZ: Asia/Taipei
+    volumes:
+      - ${RE_WORKSPACE:?run through ./re}:/work
+      - home:/home/re
+    tmpfs:
+      - /tmp:exec,mode=1777,size=4g
+    shm_size: 1g
+    mem_limit: ${RE_MEM:-6g}
+    pids_limit: 4096
+    ulimits:
+      core: 0
+
+networks:
+  sandbox:
+    internal: true
+  outside: {}
+
+volumes:
+  home: {}

@@ -1,0 +1,11 @@
+#!/bin/bash
+# Codex via the credential gateway. Provider: RE_PROVIDER=openai|deepseek|openrouter
+set -euo pipefail
+unset OPENAI_API_KEY CODEX_API_KEY OPENAI_ORGANIZATION OPENAI_PROJECT
+pre=()
+[ -n "${RE_MODEL:-}" ] && pre+=(-c "model=\"$RE_MODEL\"")   # -m on the host
+case "${RE_PROVIDER:-openai}" in
+  openai) exec /usr/local/bin/codex "${pre[@]}" "$@" ;;
+  deepseek|openrouter) exec /usr/local/bin/codex --profile "$RE_PROVIDER" "${pre[@]}" "$@" ;;
+  *) echo "codex: unsupported RE_PROVIDER=$RE_PROVIDER (openai|deepseek|openrouter)" >&2; exit 2 ;;
+esac

@@ -1,0 +1,39 @@
+#!/bin/bash
+# Verifies the sandbox's isolation from the inside. Exit 1 if any check fails.
+fail=0
+ok()   { printf '  PASS  %s\n' "$1"; }
+bad()  { printf '  FAIL  %s\n' "$1"; fail=1; }
+check() { local desc=$1; shift; if "$@" >/dev/null 2>&1; then ok "$desc"; else bad "$desc"; fi; }
+refuse() { local desc=$1; shift; if "$@" >/dev/null 2>&1; then bad "$desc"; else ok "$desc"; fi; }
+tcp() { timeout 4 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; }
+
+echo "== credentials"
+refuse "no /run/secrets in sandbox" test -e /run/secrets
+refuse "no API-key-looking env vars" bash -c 'env | grep -Eiq "^(ANTHROPIC_API_KEY|OPENAI_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|CODEX_API_KEY)=.+"'
+refuse "no key material in env values" bash -c 'env | grep -Eq "(sk-ant-|sk-proj-|sk-or-v1-)[A-Za-z0-9_-]{16,}"'
+refuse "no docker socket" bash -c 'test -S /var/run/docker.sock || test -S /run/docker.sock'
+
+echo "== privileges"
+check "effective capabilities are empty" bash -c '[ "$(awk "/^CapEff/{print \$2}" /proc/self/status)" = 0000000000000000 ]'
+check "bounding set is empty" bash -c '[ "$(awk "/^CapBnd/{print \$2}" /proc/self/status)" = 0000000000000000 ]'
+check "no_new_privs is set" bash -c '[ "$(awk "/^NoNewPrivs/{print \$2}" /proc/self/status)" = 1 ]'
+refuse "cannot modify firewall" bash -c 'iptables -w -P OUTPUT ACCEPT 2>&1 || /usr/sbin/iptables -w -P OUTPUT ACCEPT'
+check "running as non-root" bash -c '[ "$(id -u)" != 0 ]'
+
+echo "== network"
+check "gateway reachable" curl -fsS --max-time 4 http://gateway:8080/healthz
+check "relay reachable" curl -fsS --max-time 4 http://relay:3128/healthz
+for h in host.docker.internal host.orb.internal 0.250.250.254 169.254.169.254; do
+  ip=$(getent ahostsv4 "$h" 2>/dev/null | awk 'NR==1{print $1}'); ip=${ip:-$h}
+  for p in 22 80 443 5000 7000 8080; do refuse "host/metadata $h:$p blocked" tcp "$ip" "$p"; done
+done
+if [ "${RE_EXPECT_EGRESS:-0}" != 1 ]; then
+  refuse "internet 1.1.1.1:443 blocked (isolated mode)" tcp 1.1.1.1 443
+  refuse "external DNS does not resolve (isolated mode)" getent ahostsv4 example.com
+fi
+refuse "gateway does not proxy arbitrary paths" curl -fsS --max-time 4 http://gateway:8080/openai/v1/files
+refuse "egress proxy refuses non-allow-listed domain" curl -fsS --max-time 6 -x http://relay:3128 https://example.org
+refuse "egress proxy refuses raw IPs" curl -fsS --max-time 6 -x http://relay:3128 https://1.1.1.1
+
+[ $fail = 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
+exit $fail

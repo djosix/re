@@ -1,0 +1,38 @@
+# managed-by-re: regenerated from /opt/re/config/codex/ on every container start.
+# Delete this line to keep your own edits (they persist in the home volume).
+#
+# All providers point at the credential gateway; no API key exists in this container.
+model_provider = "re-openai"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"   # the container is the sandbox; bwrap cannot nest in Docker
+check_for_update_on_startup = false
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[model_providers.re-openai]
+name = "OpenAI (re-gateway)"
+base_url = "http://gateway:8080/openai/v1"
+wire_api = "responses"
+
+[model_providers.re-deepseek]
+name = "DeepSeek (re-gateway)"
+base_url = "http://gateway:8080/deepseek"
+wire_api = "responses"
+
+[model_providers.re-openrouter]
+name = "OpenRouter (re-gateway)"
+base_url = "http://gateway:8080/openrouter/v1"
+wire_api = "responses"
+
+[projects."/work"]
+trust_level = "trusted"
+
+[mcp_servers.rea]
+command = "rea"
+args = ["mcp"]
+startup_timeout_sec = 30
+tool_timeout_sec = 450

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Expose a relay TCP forward (host serial bridge) as a local pty.
+#   serial-attach 7000 [link]   ->  /tmp/ttyTARGET (use with picocom/minicom/pyserial)
+# pyserial can also use the socket directly: serial.serial_for_url("socket://relay:7000")
+set -eu
+port=${1:?usage: serial-attach RELAY_PORT [PTY_LINK]}
+link=${2:-/tmp/ttyTARGET}
+echo "pty: $link  <->  relay:$port   (Ctrl-C to stop; baud rate is fixed by the host bridge)"
+exec socat -d "PTY,link=$link,raw,echo=0,mode=600" "TCP:relay:$port"

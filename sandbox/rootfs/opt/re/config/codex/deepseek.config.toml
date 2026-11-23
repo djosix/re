@@ -1,0 +1,4 @@
+# managed-by-re
+# Profile file (codex --profile deepseek); merged over config.toml.
+model_provider = "re-deepseek"
+model = "deepseek-v4-pro"

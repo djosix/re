@@ -1,0 +1,5 @@
+#!/bin/sh
+# Print what this sandbox can reach.
+echo "== LLM gateway routes"; curl -fsS --max-time 3 http://gateway:8080/healthz | jq -r '.routes[] | "\(.route)\t\(if .configured then "key configured" else "NO KEY" end)\t\(.upstream)"' || echo "gateway unreachable"
+echo "== relay (TCP forwards + egress proxy)"; curl -fsS --max-time 3 http://relay:3128/healthz | jq -r '"forwards: " + ((.forwards|join(", ")) // "") , "egress domains (via withproxy): " + ((.egress_domains|join(", ")) // "")' || echo "relay unreachable"
+echo "== tool versions"; cat /opt/re/VERSIONS 2>/dev/null; cat /opt/re/BUILD_NOTES 2>/dev/null; exit 0

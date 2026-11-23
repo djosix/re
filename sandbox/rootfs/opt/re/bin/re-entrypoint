@@ -1,0 +1,25 @@
+#!/bin/bash
+# Runs as the unprivileged "re" user at container start. Seeds per-user harness
+# state in the persistent home volume; everything security-relevant lives in
+# root-owned locations (/etc/claude-code, /etc/opencode, /etc/codex, /opt/re).
+set -euo pipefail
+mkdir -p ~/.claude ~/.codex ~/.config/opencode ~/.local/share
+
+# Claude Code: skip onboarding, register REA as a user-scope MCP server.
+[ -s ~/.claude.json ] || echo '{}' > ~/.claude.json
+tmp=$(mktemp)
+jq '.hasCompletedOnboarding = true
+    | .mcpServers = ((.mcpServers // {}) + {"rea": {"type": "stdio", "command": "rea", "args": ["mcp"], "env": {}}})' \
+  ~/.claude.json > "$tmp" && mv "$tmp" ~/.claude.json
+[ -s ~/.claude/settings.json ] || echo '{"skipDangerousModePermissionPrompt": true}' > ~/.claude/settings.json
+ln -sfn /opt/re/skills ~/.claude/skills   # also picked up by opencode
+
+# Codex: provider config must be user-level. Regenerated while the marker line is present.
+for src in /opt/re/config/codex/*.toml; do
+  dst=~/.codex/$(basename "$src")
+  if [ ! -f "$dst" ] || grep -q '^# managed-by-re' "$dst"; then cp "$src" "$dst"; fi
+done
+ln -sfn /opt/re/AGENTS.md ~/.codex/AGENTS.md
+ln -sfn /opt/re/AGENTS.md ~/.config/opencode/AGENTS.md
+
+exec "$@"
